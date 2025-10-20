@@ -735,10 +735,10 @@ bool debug_module_t::perform_abstract_register_access()
 
     if (is_fpu_reg(regno)) {
       // Save S0
-      write32(debug_abstract, i++, csrw(S0, CSR_DSCRATCH0));
+      write32(debug_abstract, i++, csrrw(ZERO, S0, CSR_DSCRATCH0));
       // Save mstatus
-      write32(debug_abstract, i++, csrr(S0, CSR_MSTATUS));
-      write32(debug_abstract, i++, csrw(S0, CSR_DSCRATCH1));
+      write32(debug_abstract, i++, csrrw(S0, ZERO, CSR_MSTATUS));
+      write32(debug_abstract, i++, csrrw(ZERO, S0, CSR_DSCRATCH1));
       // Set mstatus.fs
       assert((MSTATUS_FS & 0xfff) == 0);
       write32(debug_abstract, i++, lui(S0, MSTATUS_FS >> 12));
@@ -747,7 +747,7 @@ bool debug_module_t::perform_abstract_register_access()
 
     if (regno < 0x1000 && config.support_abstract_csr_access) {
       if (!is_fpu_reg(regno)) {
-        write32(debug_abstract, i++, csrw(S0, CSR_DSCRATCH0));
+        write32(debug_abstract, i++, csrrw(ZERO, S0, CSR_DSCRATCH0));
       }
 
       if (write) {
@@ -762,10 +762,10 @@ bool debug_module_t::perform_abstract_register_access()
             abstractcs.cmderr = CMDERR_NOTSUP;
             return true;
         }
-        write32(debug_abstract, i++, csrw(S0, regno));
+        write32(debug_abstract, i++, csrrw(ZERO, S0, regno));
 
       } else {
-        write32(debug_abstract, i++, csrr(S0, regno));
+        write32(debug_abstract, i++, csrrw(S0, ZERO, regno));
         switch (size) {
           case 2:
             write32(debug_abstract, i++, sw(S0, ZERO, debug_data_start));
@@ -779,7 +779,7 @@ bool debug_module_t::perform_abstract_register_access()
         }
       }
       if (!is_fpu_reg(regno)) {
-        write32(debug_abstract, i++, csrr(S0, CSR_DSCRATCH0));
+        write32(debug_abstract, i++, csrrw(S0, ZERO, CSR_DSCRATCH0));
       }
 
     } else if (regno >= 0x1000 && regno < 0x1020) {
@@ -811,7 +811,7 @@ bool debug_module_t::perform_abstract_register_access()
          * dscratch in case an exception occurs in a program buffer that
          * might be executed later.
          */
-        write32(debug_abstract, i++, csrw(S0, CSR_DSCRATCH0));
+        write32(debug_abstract, i++, csrrw(ZERO, S0, CSR_DSCRATCH0));
       }
 
     } else if (regno >= 0x1020 && regno < 0x1040 && config.support_abstract_fpr_access) {
@@ -866,10 +866,10 @@ bool debug_module_t::perform_abstract_register_access()
 
     if (is_fpu_reg(regno)) {
       // restore mstatus
-      write32(debug_abstract, i++, csrr(S0, CSR_DSCRATCH1));
-      write32(debug_abstract, i++, csrw(S0, CSR_MSTATUS));
+      write32(debug_abstract, i++, csrrw(S0, ZERO, CSR_DSCRATCH1));
+      write32(debug_abstract, i++, csrrw(ZERO, S0, CSR_MSTATUS));
       // restore s0
-      write32(debug_abstract, i++, csrr(S0, CSR_DSCRATCH0));
+      write32(debug_abstract, i++, csrrw(S0, ZERO, CSR_DSCRATCH0));
     }
   }
 
@@ -965,8 +965,8 @@ void debug_module_t::handle_post_increment(size_t xlen, unsigned aamsize, unsign
 
 void debug_module_t::generate_initial_sequence(bool aamvirtual, unsigned &offset)
 {
-  write32(debug_abstract, offset++, csrw(S0, CSR_DSCRATCH0));
-  write32(debug_abstract, offset++, csrw(S1, CSR_DSCRATCH1));
+  write32(debug_abstract, offset++, csrrw(ZERO, S0, CSR_DSCRATCH0));
+  write32(debug_abstract, offset++, csrrw(ZERO, S1, CSR_DSCRATCH1));
 
   // Modify mstatus.mprv and save old mstatus
   write32(debug_abstract, offset++, lui(S0, MSTATUS_MPRV >> 12));
@@ -976,10 +976,10 @@ void debug_module_t::generate_initial_sequence(bool aamvirtual, unsigned &offset
 void debug_module_t::generate_termination_sequence(unsigned &offset)
 {
   // Restore mstatus
-  write32(debug_abstract, offset++, csrw(S0, CSR_MSTATUS));
+  write32(debug_abstract, offset++, csrrw(ZERO, S0, CSR_MSTATUS));
 
-  write32(debug_abstract, offset++, csrr(S0, CSR_DSCRATCH0));
-  write32(debug_abstract, offset++, csrr(S1, CSR_DSCRATCH1));
+  write32(debug_abstract, offset++, csrrw(S0, ZERO, CSR_DSCRATCH0));
+  write32(debug_abstract, offset++, csrrw(S1, ZERO, CSR_DSCRATCH1));
   write32(debug_abstract, offset++, ebreak());
 }
 

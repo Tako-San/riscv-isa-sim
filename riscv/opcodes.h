@@ -29,6 +29,7 @@ j_type(std::uint32_t op, std::uint32_t rd, std::uint32_t imm) {
   assert(op < (1u << 7));    // opcode is 7 bits
   assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
   assert(imm < (1u << 21));  // J-type immediate is 21 bits
+  assert((imm & 1) == 0);    // J-type immediate must be 2-byte aligned
   return (bit(imm, 20) << 31) | (bits(imm, 10, 1) << 21) |
          (bit(imm, 11) << 20) | (bits(imm, 19, 12) << 12) | (rd << 7) | op;
 }
@@ -176,6 +177,7 @@ static std::uint32_t b_type(std::uint32_t op,
   assert(rs1 < (1u << 5));   // rs1 is 5 bits (register 0-31)
   assert(rs2 < (1u << 5));   // rs2 is 5 bits (register 0-31)
   assert(imm < (1u << 13));  // B-type immediate is 13 bits
+  assert((imm & 1) == 0);    // B-type immediate must be 2-byte aligned
   return (bit(imm, 12) << 31) | (bits(imm, 10, 5) << 25) | (rs2 << 20) |
          (rs1 << 15) | (bits(imm, 4, 1) << 8) | (bit(imm, 11) << 7) | op;
 }
@@ -207,14 +209,6 @@ static std::uint32_t csr_itype(std::uint32_t op,
 static std::uint32_t
 csrrw(std::uint32_t rd, std::uint32_t rs1, std::uint32_t csr) {
   return csr_rtype(MATCH_CSRRW, rd, rs1, csr);
-}
-
-static std::uint32_t csrw(std::uint32_t rs1, std::uint32_t csr) {
-  return csrrw(ZERO, rs1, csr);
-}
-
-static std::uint32_t csrr(std::uint32_t rd, std::uint32_t csr) {
-  return csrrw(rd, ZERO, csr);
 }
 
 // Define CSR register-based instructions using X-macro
@@ -249,20 +243,6 @@ CSR_REG_INSNS_LIST(DEFINE_CSR_REG_INSN)
 CSR_IMM_INSNS_LIST(DEFINE_CSR_IMM_INSN)
 #undef DEFINE_CSR_IMM_INSN
 #undef CSR_IMM_INSNS_LIST
-
-static std::uint32_t csrsi(std::uint32_t csr, std::uint16_t imm) {
-  return csrrsi(ZERO, imm, csr);
-}
-
-//====================== Pseudo-instructions / Utility =====================//
-
-static std::uint32_t li(std::uint32_t rd, std::uint16_t imm) {
-  return addi(rd, 0, imm);
-}
-
-static std::uint32_t nop(void) {
-  return addi(0, 0, 0);
-}
 
 //================================= MISC =================================//
 
