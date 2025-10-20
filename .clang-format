@@ -1,0 +1,112 @@
+# Clang-Format configuration for RISC-V ISA Simulator (Spike)
+# Based on analysis of existing codebase style conventions
+
+# Base style
+BasedOnStyle: LLVM
+
+# Language
+Language: Cpp
+Standard: c++17
+
+# Indentation
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Braces
+BreakBeforeBraces: Attach
+
+# Pointers and References
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+# Line Length
+ColumnLimit: 100
+
+# Function and Constructor Parameters
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackParameters: false
+BinPackArguments: true
+
+# Constructor Initializers
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 2
+PackConstructorInitializers: Never
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Control Statements
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Classes and Namespaces
+AccessModifierOffset: -2
+NamespaceIndentation: None
+IndentAccessModifiers: false
+
+# Include Blocks
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+IncludeCategories:
+  # Project headers (quoted includes)
+  - Regex:           '^"'
+    Priority:        1
+  # System headers in subdirectories (e.g., fesvr/*, sys/*)
+  - Regex:           '^<(fesvr|sys)/'
+    Priority:        2
+  # Standard C++ library headers
+  - Regex:           '^<[a-z_]+>'
+    Priority:        3
+  # C standard library headers
+  - Regex:           '^<[a-z_]+\.h>'
+    Priority:        4
+  # Everything else
+  - Regex:           '.*'
+    Priority:        5
+
+# Switch Statements
+IndentCaseLabels: true
+IndentCaseBlocks: false
+
+# Other formatting options
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+AllowAllArgumentsOnNextLine: true
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakStringLiterals: true
+CompactNamespaces: false
+Cpp11BracedListStyle: true
+FixNamespaceComments: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+ReflowComments: true
+SortUsingDeclarations: true
