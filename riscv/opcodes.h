@@ -1,259 +1,283 @@
+#include "arith.h"
 #include "encoding.h"
 
-#define ZERO	0
-#define T0      5
-#define S0      8
-#define S1      9
+#include <cassert>
+#include <cstdint>
 
-static uint32_t bits(uint32_t value, unsigned int hi, unsigned int lo) {
-  return (value >> lo) & ((1 << (hi+1-lo)) - 1);
+#define ZERO 0
+#define T0 5
+#define S0 8
+#define S1 9
+
+static std::uint32_t
+bits(std::uint32_t value, std::uint32_t hi, std::uint32_t lo) {
+  assert(hi < 32);
+  assert(lo < 32);
+  assert(hi >= lo);
+  return extract64(value, lo, hi - lo + 1);
 }
 
-static uint32_t bit(uint32_t value, unsigned int b) {
-  return (value >> b) & 1;
+static std::uint32_t bit(std::uint32_t value, std::uint32_t b) {
+  assert(b < 32);
+  return extract64(value, b, 1);
 }
 
-static uint32_t jal(unsigned int rd, uint32_t imm) __attribute__ ((unused));
-static uint32_t jal(unsigned int rd, uint32_t imm) {
-  return (bit(imm, 20) << 31) |
-    (bits(imm, 10, 1) << 21) |
-    (bit(imm, 11) << 20) |
-    (bits(imm, 19, 12) << 12) |
-    (rd << 7) |
-    MATCH_JAL;
+//================================= J-type =================================//
+
+static std::uint32_t
+j_type(std::uint32_t op, std::uint32_t rd, std::uint32_t imm) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
+  assert(imm < (1u << 21));  // J-type immediate is 21 bits
+  return (bit(imm, 20) << 31) | (bits(imm, 10, 1) << 21) |
+         (bit(imm, 11) << 20) | (bits(imm, 19, 12) << 12) | (rd << 7) | op;
 }
 
-static uint32_t csrsi(unsigned int csr, uint16_t imm) __attribute__ ((unused));
-static uint32_t csrsi(unsigned int csr, uint16_t imm) {
-  return (csr << 20) |
-    (bits(imm, 4, 0) << 15) |
-    MATCH_CSRRSI;
+static std::uint32_t jal(std::uint32_t rd, std::uint32_t imm) {
+  return j_type(MATCH_JAL, rd, imm);
 }
 
-static uint32_t sw(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t sw(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (src << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_SW;
+//================================= R-type =================================//
+
+static std::uint32_t r_type(std::uint32_t op,
+                            std::uint32_t rd,
+                            std::uint32_t rs1,
+                            std::uint32_t rs2) {
+  assert(op < (1u << 7));   // opcode is 7 bits
+  assert(rd < (1u << 5));   // rd is 5 bits (register 0-31)
+  assert(rs1 < (1u << 5));  // rs1 is 5 bits (register 0-31)
+  assert(rs2 < (1u << 5));  // rs2 is 5 bits (register 0-31)
+  return (rs2 << 20) | (rs1 << 15) | (rd << 7) | op;
 }
 
-static uint32_t sd(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t sd(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (src << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_SD;
+//================================= S-type =================================//
+
+static std::uint32_t s_type(std::uint32_t op,
+                            std::uint32_t rs1,
+                            std::uint32_t rs2,
+                            std::uint32_t imm) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rs1 < (1u << 5));   // rs1 is 5 bits (register 0-31)
+  assert(rs2 < (1u << 5));   // rs2 is 5 bits (register 0-31)
+  assert(imm < (1u << 12));  // S-type immediate is 12 bits
+  return (bits(imm, 11, 5) << 25) | (rs2 << 20) | (rs1 << 15) |
+         (bits(imm, 4, 0) << 7) | op;
 }
 
-static uint32_t sh(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t sh(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (src << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_SH;
+// Define all S-type store instructions using X-macro
+#define STORE_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(sw,  SW)  \
+  INSN_MACRO(sd,  SD)  \
+  INSN_MACRO(sh,  SH)  \
+  INSN_MACRO(sb,  SB)  \
+  INSN_MACRO(fsw, FSW) \
+  INSN_MACRO(fsd, FSD)
+
+#define DEFINE_STORE_INSN(name, match)                                  \
+  static std::uint32_t name(std::uint32_t rs2,                          \
+                            std::uint32_t rs1,                           \
+                            std::uint16_t offset) {                      \
+    return s_type(MATCH_##match, rs1, rs2, offset);                     \
+  }
+
+STORE_INSNS_LIST(DEFINE_STORE_INSN)
+#undef DEFINE_STORE_INSN
+#undef STORE_INSNS_LIST
+
+//================================= I-type =================================//
+
+static std::uint32_t i_type(std::uint32_t op,
+                            std::uint32_t rd,
+                            std::uint32_t rs1,
+                            std::uint32_t imm) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
+  assert(rs1 < (1u << 5));   // rs1 is 5 bits (register 0-31)
+  assert(imm < (1u << 12));  // I-type immediate is 12 bits
+  return (bits(imm, 11, 0) << 20) | (rs1 << 15) | (rd << 7) | op;
 }
 
-static uint32_t sb(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t sb(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (src << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_SB;
+// Define all I-type load instructions using X-macro
+#define LOAD_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(ld,  LD)  \
+  INSN_MACRO(lw,  LW)  \
+  INSN_MACRO(lh,  LH)  \
+  INSN_MACRO(lb,  LB)  \
+  INSN_MACRO(flw, FLW) \
+  INSN_MACRO(fld, FLD)
+
+#define DEFINE_LOAD_INSN(name, match)                                   \
+  static std::uint32_t name(std::uint32_t rd,                           \
+                            std::uint32_t rs1,                           \
+                            std::uint16_t offset) {                      \
+    return i_type(MATCH_##match, rd, rs1, offset);                      \
+  }
+
+LOAD_INSNS_LIST(DEFINE_LOAD_INSN)
+#undef DEFINE_LOAD_INSN
+#undef LOAD_INSNS_LIST
+
+// Define all I-type immediate ALU instructions using X-macro
+#define IMM_ALU_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(addi, ADDI) \
+  INSN_MACRO(andi, ANDI) \
+  INSN_MACRO(ori,  ORI)  \
+  INSN_MACRO(xori, XORI)
+
+#define DEFINE_IMM_ALU_INSN(name, match)                                \
+  static std::uint32_t name(std::uint32_t rd,                           \
+                            std::uint32_t rs1,                           \
+                            std::uint16_t imm) {                         \
+    return i_type(MATCH_##match, rd, rs1, imm);                         \
+  }
+
+IMM_ALU_INSNS_LIST(DEFINE_IMM_ALU_INSN)
+#undef DEFINE_IMM_ALU_INSN
+#undef IMM_ALU_INSNS_LIST
+
+// Define I-type shift instructions using X-macro
+#define SHIFT_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(slli, SLLI) \
+  INSN_MACRO(srli, SRLI)
+
+#define DEFINE_SHIFT_INSN(name, match)                                  \
+  static std::uint32_t name(std::uint32_t rd,                           \
+                            std::uint32_t rs1,                           \
+                            std::uint8_t shamt) {                        \
+    assert(shamt < 64); /* shamt is 6 bits for RV64 (5 bits for RV32) */\
+    return i_type(MATCH_##match, rd, rs1, shamt);                       \
+  }
+
+SHIFT_INSNS_LIST(DEFINE_SHIFT_INSN)
+#undef DEFINE_SHIFT_INSN
+#undef SHIFT_INSNS_LIST
+
+//================================= U-type =================================//
+
+static std::uint32_t
+u_type(std::uint32_t op, std::uint32_t rd, std::uint32_t imm) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
+  assert(imm < (1u << 20));  // U-type immediate is 20 bits
+  return (bits(imm, 19, 0) << 12) | (rd << 7) | op;
 }
 
-static uint32_t ld(unsigned int rd, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t ld(unsigned int rd, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(rd, 4, 0) << 7) |
-    MATCH_LD;
+static std::uint32_t lui(std::uint32_t rd, std::uint32_t imm) {
+  return u_type(MATCH_LUI, rd, imm);
 }
 
-static uint32_t lw(unsigned int rd, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t lw(unsigned int rd, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(rd, 4, 0) << 7) |
-    MATCH_LW;
+//================================= B-type =================================//
+
+static std::uint32_t b_type(std::uint32_t op,
+                            std::uint32_t rs1,
+                            std::uint32_t rs2,
+                            std::uint32_t imm) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rs1 < (1u << 5));   // rs1 is 5 bits (register 0-31)
+  assert(rs2 < (1u << 5));   // rs2 is 5 bits (register 0-31)
+  assert(imm < (1u << 13));  // B-type immediate is 13 bits
+  return (bit(imm, 12) << 31) | (bits(imm, 10, 5) << 25) | (rs2 << 20) |
+         (rs1 << 15) | (bits(imm, 4, 1) << 8) | (bit(imm, 11) << 7) | op;
 }
 
-static uint32_t lh(unsigned int rd, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t lh(unsigned int rd, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(rd, 4, 0) << 7) |
-    MATCH_LH;
+//================================== CSRs ==================================//
+
+static std::uint32_t csr_rtype(std::uint32_t op,
+                               std::uint32_t rd,
+                               std::uint32_t rs1,
+                               std::uint32_t csr) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
+  assert(rs1 < (1u << 5));   // rs1 is 5 bits (register 0-31)
+  assert(csr < (1u << 12));  // CSR address is 12 bits
+  return (csr << 20) | (rs1 << 15) | (rd << 7) | op;
 }
 
-static uint32_t lb(unsigned int rd, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t lb(unsigned int rd, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(rd, 4, 0) << 7) |
-    MATCH_LB;
+static std::uint32_t csr_itype(std::uint32_t op,
+                               std::uint32_t rd,
+                               std::uint32_t imm,
+                               std::uint32_t csr) {
+  assert(op < (1u << 7));    // opcode is 7 bits
+  assert(rd < (1u << 5));    // rd is 5 bits (register 0-31)
+  assert(imm < (1u << 5));   // CSR immediate (uimm) is 5 bits
+  assert(csr < (1u << 12));  // CSR address is 12 bits
+  return (csr << 20) | (bits(imm, 4, 0) << 15) | (rd << 7) | op;
 }
 
-static uint32_t csrw(unsigned int source, unsigned int csr) __attribute__ ((unused));
-static uint32_t csrw(unsigned int source, unsigned int csr) {
-  return (csr << 20) | (source << 15) | MATCH_CSRRW;
+static std::uint32_t
+csrrw(std::uint32_t rd, std::uint32_t rs1, std::uint32_t csr) {
+  return csr_rtype(MATCH_CSRRW, rd, rs1, csr);
 }
 
-static uint32_t addi(unsigned int dest, unsigned int src, uint16_t imm) __attribute__ ((unused));
-static uint32_t addi(unsigned int dest, unsigned int src, uint16_t imm)
-{
-  return (bits(imm, 11, 0) << 20) |
-    (src << 15) |
-    (dest << 7) |
-    MATCH_ADDI;
+static std::uint32_t csrw(std::uint32_t rs1, std::uint32_t csr) {
+  return csrrw(ZERO, rs1, csr);
 }
 
-static uint32_t csrr(unsigned int rd, unsigned int csr) __attribute__ ((unused));
-static uint32_t csrr(unsigned int rd, unsigned int csr) {
-  return (csr << 20) | (rd << 7) | MATCH_CSRRS;
+static std::uint32_t csrr(std::uint32_t rd, std::uint32_t csr) {
+  return csrrw(rd, ZERO, csr);
 }
 
-static uint32_t csrrs(unsigned int rd, unsigned int rs1, unsigned int csr) __attribute__ ((unused));
-static uint32_t csrrs(unsigned int rd, unsigned int rs1, unsigned int csr) {
-  return (csr << 20) | (rs1 << 15) | (rd << 7) | MATCH_CSRRS;
+// Define CSR register-based instructions using X-macro
+#define CSR_REG_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(csrrs, CSRRS) \
+  INSN_MACRO(csrrc, CSRRC)
+
+#define DEFINE_CSR_REG_INSN(name, match)                                \
+  static std::uint32_t name(std::uint32_t rd,                           \
+                            std::uint32_t rs1,                           \
+                            std::uint32_t csr) {                         \
+    return csr_rtype(MATCH_##match, rd, rs1, csr);                      \
+  }
+
+CSR_REG_INSNS_LIST(DEFINE_CSR_REG_INSN)
+#undef DEFINE_CSR_REG_INSN
+#undef CSR_REG_INSNS_LIST
+
+// Define CSR immediate-based instructions using X-macro
+#define CSR_IMM_INSNS_LIST(INSN_MACRO) \
+  INSN_MACRO(csrrwi, CSRRWI) \
+  INSN_MACRO(csrrsi, CSRRSI) \
+  INSN_MACRO(csrrci, CSRRCI)
+
+#define DEFINE_CSR_IMM_INSN(name, match)                                \
+  static std::uint32_t name(std::uint32_t rd,                           \
+                            std::uint32_t imm,                           \
+                            std::uint32_t csr) {                         \
+    return csr_itype(MATCH_##match, rd, imm, csr);                      \
+  }
+
+CSR_IMM_INSNS_LIST(DEFINE_CSR_IMM_INSN)
+#undef DEFINE_CSR_IMM_INSN
+#undef CSR_IMM_INSNS_LIST
+
+static std::uint32_t csrsi(std::uint32_t csr, std::uint16_t imm) {
+  return csrrsi(ZERO, imm, csr);
 }
 
-static uint32_t csrrc(unsigned int rd, unsigned int rs1, unsigned int csr) __attribute__ ((unused));
-static uint32_t csrrc(unsigned int rd, unsigned int rs1, unsigned int csr) {
-  return (csr << 20) | (rs1 << 15) | (rd << 7) | MATCH_CSRRC;
+//====================== Pseudo-instructions / Utility =====================//
+
+static std::uint32_t li(std::uint32_t rd, std::uint16_t imm) {
+  return addi(rd, 0, imm);
 }
 
-static uint32_t csrrw(unsigned int rd, unsigned int rs1, unsigned int csr) __attribute__ ((unused));
-static uint32_t csrrw(unsigned int rd, unsigned int rs1, unsigned int csr) {
-  return (csr << 20) | (rs1 << 15) | (rd << 7) | MATCH_CSRRW;
-}
-
-static uint32_t fsw(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t fsw(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (bits(src, 4, 0) << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_FSW;
-}
-
-static uint32_t fsd(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t fsd(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (bits(src, 4, 0) << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_FSD;
-}
-
-static uint32_t flw(unsigned int dest, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t flw(unsigned int dest, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(dest, 4, 0) << 7) |
-    MATCH_FLW;
-}
-
-static uint32_t fld(unsigned int dest, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t fld(unsigned int dest, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 0) << 20) |
-    (base << 15) |
-    (bits(dest, 4, 0) << 7) |
-    MATCH_FLD;
-}
-
-static uint32_t ebreak(void) __attribute__ ((unused));
-static uint32_t ebreak(void) { return MATCH_EBREAK; }
-static uint32_t ebreak_c(void) __attribute__ ((unused));
-static uint32_t ebreak_c(void) { return MATCH_C_EBREAK; }
-
-static uint32_t dret(void) __attribute__ ((unused));
-static uint32_t dret(void) { return MATCH_DRET; }
-
-static uint32_t fence_i(void) __attribute__ ((unused));
-static uint32_t fence_i(void)
-{
-  return MATCH_FENCE_I;
-}
-
-static uint32_t lui(unsigned int dest, uint32_t imm) __attribute__ ((unused));
-static uint32_t lui(unsigned int dest, uint32_t imm)
-{
-  return (bits(imm, 19, 0) << 12) |
-    (dest << 7) |
-    MATCH_LUI;
-}
-
-/*
-static uint32_t csrci(unsigned int csr, uint16_t imm) __attribute__ ((unused));
-static uint32_t csrci(unsigned int csr, uint16_t imm) {
-  return (csr << 20) |
-    (bits(imm, 4, 0) << 15) |
-    MATCH_CSRRCI;
-}
-
-static uint32_t li(unsigned int dest, uint16_t imm) __attribute__ ((unused));
-static uint32_t li(unsigned int dest, uint16_t imm)
-{
-	return addi(dest, 0, imm);
-}
-
-static uint32_t fsd(unsigned int src, unsigned int base, uint16_t offset) __attribute__ ((unused));
-static uint32_t fsd(unsigned int src, unsigned int base, uint16_t offset)
-{
-  return (bits(offset, 11, 5) << 25) |
-    (bits(src, 4, 0) << 20) |
-    (base << 15) |
-    (bits(offset, 4, 0) << 7) |
-    MATCH_FSD;
-}
-
-static uint32_t ori(unsigned int dest, unsigned int src, uint16_t imm) __attribute__ ((unused));
-static uint32_t ori(unsigned int dest, unsigned int src, uint16_t imm)
-{
-  return (bits(imm, 11, 0) << 20) |
-    (src << 15) |
-    (dest << 7) |
-    MATCH_ORI;
-}
-
-static uint32_t nop(void) __attribute__ ((unused));
-static uint32_t nop(void)
-{
+static std::uint32_t nop(void) {
   return addi(0, 0, 0);
 }
-*/
 
-static uint32_t xori(unsigned int dest, unsigned int src, uint16_t imm) __attribute__ ((unused));
-static uint32_t xori(unsigned int dest, unsigned int src, uint16_t imm)
-{
-  return (bits(imm, 11, 0) << 20) |
-    (src << 15) |
-    (dest << 7) |
-    MATCH_XORI;
+//================================= MISC =================================//
+
+static std::uint32_t ebreak(void) {
+  return MATCH_EBREAK;
 }
 
-static uint32_t srli(unsigned int dest, unsigned int src, uint8_t shamt) __attribute__ ((unused));
-static uint32_t srli(unsigned int dest, unsigned int src, uint8_t shamt)
-{
-	return (bits(shamt, 4, 0) << 20) |
-		(src << 15) |
-		(dest << 7) |
-		MATCH_SRLI;
+static std::uint32_t ebreak_c(void) {
+  return MATCH_C_EBREAK;
+}
+
+static std::uint32_t dret(void) {
+  return MATCH_DRET;
+}
+
+static std::uint32_t fence_i(void) {
+  return MATCH_FENCE_I;
 }
