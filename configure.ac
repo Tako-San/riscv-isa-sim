@@ -92,6 +92,27 @@ AX_APPEND_LINK_FLAGS([-Wl,--export-dynamic])
 AX_CHECK_COMPILE_FLAG([-relocatable-pch], AC_SUBST([HAVE_CLANG_PCH],[yes]))
 
 #-------------------------------------------------------------------------
+# Optional LLVM XRay instrumentation
+#-------------------------------------------------------------------------
+
+AC_ARG_ENABLE([llvm-xray],
+  AS_HELP_STRING([--enable-llvm-xray], [Enable LLVM XRay function tracing instrumentation]))
+
+AS_IF([test "x$enable_llvm_xray" = "xyes"], [
+  AC_MSG_NOTICE([Enabling LLVM XRay instrumentation])
+  AX_CHECK_COMPILE_FLAG([-fxray-instrument],
+    [CFLAGS="$CFLAGS -fxray-instrument"
+     CXXFLAGS="$CXXFLAGS -fxray-instrument"
+     AC_DEFINE([HAVE_LLVM_XRAY], [1], [LLVM XRay instrumentation is enabled])],
+    [AC_MSG_ERROR([LLVM XRay support requested but compiler does not support -fxray-instrument])])
+
+  # Add optional XRay flags for better tracing
+  AX_CHECK_COMPILE_FLAG([-fxray-instruction-threshold=1],
+    [CFLAGS="$CFLAGS -fxray-instruction-threshold=1"
+     CXXFLAGS="$CXXFLAGS -fxray-instruction-threshold=1"])
+])
+
+#-------------------------------------------------------------------------
 # MCPPBS subproject list
 #-------------------------------------------------------------------------
 # Order list so that subprojects only depend on those listed earlier.
