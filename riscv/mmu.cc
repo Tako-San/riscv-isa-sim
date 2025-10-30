@@ -291,6 +291,13 @@ void mmu_t::load_slow_path(reg_t original_addr, reg_t len, uint8_t* bytes, xlate
   }
   check_triggers(triggers::OPERATION_LOAD, transformed_addr, access_info.effective_virt, reg_from_bytes(len, bytes));
 
+  // Throw TIMING_AFTER trigger immediately after load completes to avoid pipeline skid
+  if (matched_trigger) {
+    auto trig = matched_trigger.value();
+    matched_trigger.reset();
+    throw trig;
+  }
+
   if (proc && unlikely(proc->get_log_commits_enabled()))
     proc->state.log_mem_read.push_back(std::make_tuple(original_addr, 0, len));
 }
@@ -368,6 +375,13 @@ void mmu_t::store_slow_path(reg_t original_addr, reg_t len, const uint8_t* bytes
     }
   } else {
     store_slow_path_intrapage(len, bytes, access_info, actually_store);
+  }
+
+  // Throw TIMING_AFTER trigger immediately after store completes to avoid pipeline skid
+  if (matched_trigger) {
+    auto trig = matched_trigger.value();
+    matched_trigger.reset();
+    throw trig;
   }
 
   if (actually_store && proc && unlikely(proc->get_log_commits_enabled())) {
