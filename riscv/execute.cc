@@ -177,6 +177,14 @@ static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t f
         commit_log_print_insn(p, pc, fetch.insn);
       }
      }
+  } catch (triggers::after_trap_t& t) {
+      // AFTER trigger: instruction has completed, compute next PC and log
+      t.npc = pc + insn_length(fetch.insn.bits());
+      if (p->get_log_commits_enabled()) {
+        commit_log_print_insn(p, pc, fetch.insn);
+      }
+      p->update_histogram(pc);
+      throw;
   } catch (wait_for_interrupt_t &t) {
       if (p->get_log_commits_enabled()) {
         commit_log_print_insn(p, pc, fetch.insn);
@@ -353,6 +361,15 @@ void processor_t::step(size_t n)
     catch (triggers::matched_t& t)
     {
       take_trigger_action(t.action, t.address, pc, t.gva);
+    }
+    catch (triggers::after_trap_t& t)
+    {
+      // The triggering instruction has finished. The exception was logged in execute_insn_logged.
+      // Take the trigger action, passing npc as the exception PC (next instruction address).
+      take_trigger_action(t.action, t.address, t.npc, t.gva);
+
+      // Stop the current step loop, as the trap handler has changed the PC.
+      n = instret + 1;
     }
     catch(trap_debug_mode&)
     {

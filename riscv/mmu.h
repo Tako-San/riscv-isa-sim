@@ -522,7 +522,6 @@ private:
   bool check_triggers_fetch;
   bool check_triggers_load;
   bool check_triggers_store;
-  std::optional<triggers::matched_t> matched_trigger;
 
   friend class processor_t;
 };

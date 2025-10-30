@@ -70,6 +70,15 @@ class matched_t
     bool gva;
 };
 
+class after_trap_t : public matched_t
+{
+public:
+  after_trap_t(triggers::operation_t operation, reg_t address, action_t action, bool gva) :
+    matched_t(operation, address, action, gva), npc(0) {}
+
+  reg_t npc;  // Next PC for proper dpc setting
+};
+
 class trigger_t {
 public:
   virtual ~trigger_t() {};

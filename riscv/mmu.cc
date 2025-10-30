@@ -83,12 +83,6 @@ inline mmu_t::insn_parcel_t mmu_t::perform_intrapage_fetch(reg_t vaddr, uintptr_
 
 mmu_t::insn_parcel_t mmu_t::fetch_slow_path(reg_t vaddr)
 {
-  if (matched_trigger) {
-    auto trig = matched_trigger.value();
-    matched_trigger.reset();
-    throw trig;
-  }
-
   if  (auto [tlb_hit, host_addr, paddr] = access_tlb(tlb_insn, vaddr, TLB_FLAGS & ~TLB_CHECK_TRIGGERS); tlb_hit) {
     // Fast path for simple cases
     return perform_intrapage_fetch(vaddr, host_addr, paddr);
@@ -191,7 +185,7 @@ bool mmu_t::mmio(reg_t paddr, size_t len, uint8_t* bytes, access_type type)
 
 void mmu_t::check_triggers(triggers::operation_t operation, reg_t address, bool virt, reg_t tval, std::optional<reg_t> data)
 {
-  if (matched_trigger || !proc)
+  if (!proc)
     return;
 
   auto match = proc->TM.detect_memory_access_match(operation, address, data);
@@ -202,11 +196,8 @@ void mmu_t::check_triggers(triggers::operation_t operation, reg_t address, bool 
         throw triggers::matched_t(operation, tval, match->action, virt);
 
       case triggers::TIMING_AFTER:
-        // We want to take this exception on the next instruction.  We check
-        // whether to do so in the I$ refill slow path, which we can force by
-        // flushing the TLB.
-        flush_tlb();
-        matched_trigger = triggers::matched_t(operation, tval, match->action, virt);
+        // MODIFICATION: Instead of setting a flag, throw the new exception immediately.
+        throw triggers::after_trap_t(operation, tval, match->action, virt);
     }
 }
 
